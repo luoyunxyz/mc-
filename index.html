@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>我的世界末地传送门定位器</title>
+  <style>
+    :root {
+      --bg: #07110d;
+      --panel: rgba(11, 24, 18, 0.93);
+      --panel2: rgba(16, 38, 29, 0.9);
+      --line: rgba(147, 197, 164, 0.24);
+      --text: #f3fff7;
+      --muted: #a8c5b4;
+      --green: #47f08b;
+      --cyan: #67e8f9;
+      --gold: #facc15;
+      --red: #fb7185;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--text);
+      font-family: "Microsoft YaHei", system-ui, sans-serif;
+      background:
+        linear-gradient(rgba(7, 17, 13, 0.84), rgba(7, 17, 13, 0.94)),
+        repeating-linear-gradient(90deg, rgba(71, 240, 139, 0.08) 0 1px, transparent 1px 48px),
+        repeating-linear-gradient(0deg, rgba(103, 232, 249, 0.06) 0 1px, transparent 1px 48px),
+        radial-gradient(circle at 70% 20%, rgba(71, 240, 139, 0.18), transparent 34%),
+        var(--bg);
+    }
+    .wrap { width: min(1180px, calc(100% - 28px)); margin: 0 auto; padding: 28px 0; }
+    .hero, .layout { display: grid; gap: 18px; }
+    .hero { grid-template-columns: 1.08fr 0.92fr; margin-bottom: 18px; }
+    .layout { grid-template-columns: 420px 1fr; }
+    .panel, .title, .result {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      padding: 20px;
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.28);
+    }
+    .title { background: linear-gradient(135deg, rgba(16, 38, 29, 0.98), rgba(8, 24, 19, 0.88)); }
+    .result { border-color: rgba(250, 204, 21, 0.34); background: linear-gradient(145deg, rgba(57, 42, 12, 0.72), rgba(15, 28, 20, 0.94)); }
+    h1 { margin: 0 0 10px; font-size: clamp(30px, 5vw, 56px); line-height: 1.05; letter-spacing: 0; }
+    h2 { margin: 0 0 14px; font-size: 18px; }
+    h3 { margin: 0 0 12px; color: var(--cyan); }
+    p, .hint, .details { color: var(--muted); line-height: 1.7; }
+    .result-label { color: var(--gold); font-weight: 900; margin-bottom: 10px; }
+    .coords { font-size: clamp(26px, 4vw, 44px); font-weight: 900; line-height: 1.18; margin-bottom: 10px; }
+    .obs { background: var(--panel2); border: 1px solid var(--line); padding: 14px; margin-bottom: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    label { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }
+    input {
+      width: 100%;
+      min-height: 42px;
+      border: 1px solid rgba(168, 197, 180, 0.38);
+      background: rgba(3, 9, 7, 0.82);
+      color: var(--text);
+      border-radius: 8px;
+      padding: 10px 11px;
+      font: inherit;
+      outline: none;
+    }
+    input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(71, 240, 139, 0.14); }
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+    button {
+      min-height: 44px;
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      background: var(--green);
+      color: #06130c;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    button.secondary { color: var(--text); background: rgba(103, 232, 249, 0.16); border: 1px solid rgba(103, 232, 249, 0.34); }
+    .map-panel { display: grid; grid-template-rows: auto 1fr auto; min-height: 590px; }
+    canvas {
+      width: 100%;
+      height: 100%;
+      min-height: 420px;
+      display: block;
+      border: 1px solid rgba(103, 232, 249, 0.2);
+      background: rgba(1, 8, 6, 0.8);
+    }
+    .legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 13px; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; }
+    .error { color: var(--red); font-weight: 800; }
+    strong { color: var(--gold); }
+    @media (max-width: 900px) { .hero, .layout { grid-template-columns: 1fr; } .map-panel { min-height: 480px; } }
+    @media (max-width: 520px) { .grid, .actions { grid-template-columns: 1fr; } .wrap { width: min(100% - 16px, 1180px); padding: 12px 0; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="title">
+        <h1>末地传送门定位器</h1>
+        <p>在两个不同地点投掷末影之眼，分别记录“站立初始坐标”和“末影之眼掉落坐标”。本工具会把两次飞行方向延长成直线，计算交叉点，给出要前往的末地传送门估算位置。</p>
+      </div>
+      <div class="result">
+        <div class="result-label">估算交叉点</div>
+        <div class="coords" id="coords">等待输入</div>
+        <div class="hint" id="hint">建议两次观测点相隔 200 格以上，且两条方向线夹角越大，结果越稳定。</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="panel">
+        <h2>输入坐标</h2>
+        <div class="obs">
+          <h3>第一次投掷</h3>
+          <div class="grid">
+            <label>初始 X<input id="a0x" type="number" step="0.01" value="120" /></label>
+            <label>初始 Z<input id="a0z" type="number" step="0.01" value="300" /></label>
+            <label>掉落 X<input id="a1x" type="number" step="0.01" value="170" /></label>
+            <label>掉落 Z<input id="a1z" type="number" step="0.01" value="250" /></label>
+          </div>
+        </div>
+        <div class="obs">
+          <h3>第二次投掷</h3>
+          <div class="grid">
+            <label>初始 X<input id="b0x" type="number" step="0.01" value="-260" /></label>
+            <label>初始 Z<input id="b0z" type="number" step="0.01" value="120" /></label>
+            <label>掉落 X<input id="b1x" type="number" step="0.01" value="-190" /></label>
+            <label>掉落 Z<input id="b1z" type="number" step="0.01" value="135" /></label>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="calcBtn">计算位置</button>
+          <button class="secondary" id="sampleBtn">填入示例</button>
+        </div>
+        <div class="details" id="details">说明：Minecraft 平面坐标使用 X / Z。本工具按二维直线交点计算，不使用 Y 坐标。</div>
+      </div>
+
+      <div class="panel map-panel">
+        <h2>方向线地图</h2>
+        <canvas id="map" width="1000" height="620"></canvas>
+        <div class="legend">
+          <span><i class="dot" style="background: var(--cyan)"></i>观测点</span>
+          <span><i class="dot" style="background: var(--green)"></i>掉落点</span>
+          <span><i class="dot" style="background: var(--gold)"></i>估算传送门</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const ids = ["a0x", "a0z", "a1x", "a1z", "b0x", "b0z", "b1x", "b1z"];
+    const canvas = document.querySelector("#map");
+    const ctx = canvas.getContext("2d");
+    const coords = document.querySelector("#coords");
+    const hint = document.querySelector("#hint");
+    const details = document.querySelector("#details");
+
+    function readPoint(prefix) {
+      return { x: number(prefix + "x"), z: number(prefix + "z") };
+    }
+
+    function number(id) {
+      const value = Number(document.querySelector("#" + id).value);
+      if (!Number.isFinite(value)) throw new Error("Invalid coordinates. Please fill in every number.");
+      return value;
+    }
+
+    function intersect(p, p2, q, q2) {
+      const r = { x: p2.x - p.x, z: p2.z - p.z };
+      const s = { x: q2.x - q.x, z: q2.z - q.z };
+      const cross = r.x * s.z - r.z * s.x;
+      if (Math.hypot(r.x, r.z) < 0.001 || Math.hypot(s.x, s.z) < 0.001) {
+        throw new Error("A start point and drop point cannot be the same.");
+      }
+      if (Math.abs(cross) < 0.000001) {
+        throw new Error("The two direction lines are almost parallel. Try a farther second observation.");
+      }
+      const qp = { x: q.x - p.x, z: q.z - p.z };
+      const t = (qp.x * s.z - qp.z * s.x) / cross;
+      const u = (qp.x * r.z - qp.z * r.x) / cross;
+      return { x: p.x + t * r.x, z: p.z + t * r.z, t, u, angle: angleBetween(r, s) };
+    }
+
+    function angleBetween(a, b) {
+      const dot = a.x * b.x + a.z * b.z;
+      const len = Math.hypot(a.x, a.z) * Math.hypot(b.x, b.z);
+      const deg = Math.acos(Math.max(-1, Math.min(1, dot / len))) * 180 / Math.PI;
+      return Math.min(deg, 180 - deg);
+    }
+
+    function calculate() {
+      try {
+        const a0 = readPoint("a0");
+        const a1 = readPoint("a1");
+        const b0 = readPoint("b0");
+        const b1 = readPoint("b1");
+        const hit = intersect(a0, a1, b0, b1);
+        coords.textContent = `X ${hit.x.toFixed(1)} / Z ${hit.z.toFixed(1)}`;
+        hint.innerHTML = qualityHint(hit);
+        details.innerHTML = `Go near <strong>X=${Math.round(hit.x)}, Z=${Math.round(hit.z)}</strong>. Direction line angle: <strong>${hit.angle.toFixed(1)} deg</strong>. Throw another eye nearby to confirm.`;
+        draw({ a0, a1, b0, b1, hit });
+      } catch (error) {
+        coords.textContent = "Cannot calculate";
+        hint.innerHTML = `<span class="error">${error.message}</` + `span>`;
+        details.textContent = "Check the coordinates, or take the second observation from a farther position.";
+        draw(null);
+      }
+    }
+
+    function qualityHint(hit) {
+      if (hit.angle < 10) return `<span class="error">Angle ${hit.angle.toFixed(1)} deg is too small. Pick a better second point.</` + `span>`;
+      if (hit.angle < 25) return `Angle ${hit.angle.toFixed(1)} deg is usable, but a third observation is recommended.`;
+      return `Angle ${hit.angle.toFixed(1)} deg is stable enough for a first estimate. Search downward nearby for the stronghold.`;
+    }
+
+    function draw(data) {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawGrid();
+      if (!data) return;
+      const project = makeProjector(boundsOf([data.a0, data.a1, data.b0, data.b1, data.hit]));
+      drawRay(data.a0, data.a1, project, "rgba(103,232,249,0.9)");
+      drawRay(data.b0, data.b1, project, "rgba(71,240,139,0.9)");
+      drawPoint(data.a0, project, "#67e8f9", "A 初始");
+      drawPoint(data.a1, project, "#47f08b", "A 掉落");
+      drawPoint(data.b0, project, "#67e8f9", "B 初始");
+      drawPoint(data.b1, project, "#47f08b", "B 掉落");
+      drawPoint(data.hit, project, "#facc15", "传送门估算");
+    }
+
+    function drawGrid() {
+      ctx.fillStyle = "#020806";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = "rgba(103,232,249,0.08)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+    }
+
+    function boundsOf(points) {
+      const xs = points.map(p => p.x);
+      const zs = points.map(p => p.z);
+      const minX = Math.min(...xs), maxX = Math.max(...xs);
+      const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+      const pad = Math.max(120, (maxX - minX + maxZ - minZ) * 0.15);
+      return { minX: minX - pad, maxX: maxX + pad, minZ: minZ - pad, maxZ: maxZ + pad };
+    }
+
+    function makeProjector(bounds) {
+      const w = canvas.width - 80;
+      const h = canvas.height - 80;
+      const sx = w / Math.max(1, bounds.maxX - bounds.minX);
+      const sz = h / Math.max(1, bounds.maxZ - bounds.minZ);
+      const scale = Math.min(sx, sz);
+      return p => ({ x: 40 + (p.x - bounds.minX) * scale, y: canvas.height - 40 - (p.z - bounds.minZ) * scale });
+    }
+
+    function drawRay(p0, p1, project, color) {
+      const dir = { x: p1.x - p0.x, z: p1.z - p0.z };
+      const len = Math.hypot(dir.x, dir.z);
+      const far = { x: p0.x + dir.x / len * 5000, z: p0.z + dir.z / len * 5000 };
+      const a = project(p0), b = project(far);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    }
+
+    function drawPoint(point, project, color, label) {
+      const p = project(point);
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f3fff7";
+      ctx.font = "14px Microsoft YaHei, sans-serif";
+      ctx.fillText(label, p.x + 10, p.y - 10);
+      ctx.fillStyle = "rgba(243,255,247,0.7)";
+      ctx.font = "12px Microsoft YaHei, sans-serif";
+      ctx.fillText(`X ${point.x.toFixed(1)}, Z ${point.z.toFixed(1)}`, p.x + 10, p.y + 8);
+    }
+
+    document.querySelector("#calcBtn").addEventListener("click", calculate);
+    document.querySelector("#sampleBtn").addEventListener("click", () => {
+      const sample = { a0x: 120, a0z: 300, a1x: 170, a1z: 250, b0x: -260, b0z: 120, b1x: -190, b1z: 135 };
+      for (const [id, value] of Object.entries(sample)) document.querySelector("#" + id).value = value;
+      calculate();
+    });
+    ids.forEach(id => document.querySelector("#" + id).addEventListener("input", calculate));
+    calculate();
+  </script>
+</body>
+</html>
